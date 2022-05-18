@@ -23,7 +23,7 @@
 
 
 
--keep class org.appspot.apprtc.**  { *; }
+-keep class org.appspot.addrtc.**  { *; }
 
 
 

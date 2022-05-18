@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-package org.appspot.apprtc;
+package org.appspot.addrtc;
 
 import android.annotation.TargetApi;
 import android.content.Context;

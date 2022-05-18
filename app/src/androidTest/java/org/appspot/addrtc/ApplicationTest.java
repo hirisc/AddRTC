@@ -1,4 +1,4 @@
-package org.appspot.apprtc;
+package org.appspot.addrtc;
 
 import android.app.Application;
 import android.test.ApplicationTestCase;

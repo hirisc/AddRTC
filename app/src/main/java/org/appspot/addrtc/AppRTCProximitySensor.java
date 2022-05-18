@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-package org.appspot.apprtc;
+package org.appspot.addrtc;
 
 import android.content.Context;
 import android.hardware.Sensor;
@@ -18,7 +18,7 @@ import android.hardware.SensorManager;
 import android.os.Build;
 import android.support.annotation.Nullable;
 import android.util.Log;
-import org.appspot.apprtc.util.AppRTCUtils;
+import org.appspot.addrtc.util.AppRTCUtils;
 import org.webrtc.ThreadUtils;
 
 /**

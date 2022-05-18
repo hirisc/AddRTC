@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">AppRTC</string>
-    <string name="settings_name" translatable="false">AppRTC Settings</string>
+    <string name="app_name" translatable="false">AddRTC</string>
+    <string name="settings_name" translatable="false">AddRTC Settings</string>
     <string name="disconnect_call">Disconnect Call</string>
     <string name="room_description">
         Please enter a room name. Room names are shared with everyone, so think
@@ -54,7 +54,7 @@
 
     <string name="pref_resolution_key">resolution_preference</string>
     <string name="pref_resolution_title">Video resolution.</string>
-    <string name="pref_resolution_dlg">Enter AppRTC local video resolution.</string>
+    <string name="pref_resolution_dlg">Enter AddRTC local video resolution.</string>
     <string name="pref_resolution_default">Default</string>
 
     <string name="pref_fps_key">fps_preference</string>
@@ -206,7 +206,7 @@
     <string name="pref_room_server_url_key">room_server_url_preference</string>
     <string name="pref_room_server_url_title">Room server URL.</string>
     <string name="pref_room_server_url_dlg">Enter a room server URL.</string>
-    <string name="pref_room_server_url_default" translatable="false">https://appr.tc</string>
+    <string name="pref_room_server_url_default" translatable="false">https://192.168.100.178</string>
 
     <string name="pref_displayhud_key">displayhud_preference</string>
     <string name="pref_displayhud_title">Display call statistics.</string>

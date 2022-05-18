@@ -7,29 +7,29 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-package org.appspot.apprtc
+package org.appspot.addrtc
 
 import android.app.Activity
-import org.appspot.apprtc.AppRTCClient.SignalingEvents
-import org.appspot.apprtc.PeerConnectionClient.PeerConnectionEvents
-import org.appspot.apprtc.CallFragment.OnCallEvents
+import org.appspot.addrtc.AppRTCClient.SignalingEvents
+import org.appspot.addrtc.PeerConnectionClient.PeerConnectionEvents
+import org.appspot.addrtc.CallFragment.OnCallEvents
 import kotlin.jvm.Synchronized
-import org.appspot.apprtc.AppRTCClient.SignalingParameters
+import org.appspot.addrtc.AppRTCClient.SignalingParameters
 import android.widget.Toast
-import org.appspot.apprtc.AppRTCClient.RoomConnectionParameters
-import org.appspot.apprtc.PeerConnectionClient.PeerConnectionParameters
+import org.appspot.addrtc.AppRTCClient.RoomConnectionParameters
+import org.appspot.addrtc.PeerConnectionClient.PeerConnectionParameters
 import android.os.Bundle
 import android.view.WindowManager
 import android.content.Intent
 import org.webrtc.RendererCommon.ScalingType
 import android.content.pm.PackageManager
 import android.util.DisplayMetrics
-import org.appspot.apprtc.PeerConnectionClient.DataChannelParameters
+import org.appspot.addrtc.PeerConnectionClient.DataChannelParameters
 import android.app.FragmentTransaction
 import android.annotation.TargetApi
 import android.media.projection.MediaProjectionManager
 import android.media.projection.MediaProjection
-import org.appspot.apprtc.AppRTCAudioManager.AudioDevice
+import org.appspot.addrtc.AppRTCAudioManager.AudioDevice
 import android.app.AlertDialog
 import android.os.Build
 import android.os.Handler
@@ -66,7 +66,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     private val remoteProxyRenderer = ProxyVideoSink()
     private val localProxyVideoSink = ProxyVideoSink()
     private var peerConnectionClient: PeerConnectionClient? = null
-    private var appRtcClient: AppRTCClient? = null
+    private var appRtcClient: WsRTCClient? = null
     private var signalingParameters: SignalingParameters? = null
     private var audioManager: AppRTCAudioManager? = null
     private var pipRenderer: SurfaceViewRenderer? = null
@@ -227,7 +227,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         // standard WebSocketRTCClient.
         run {
             Log.i(TAG, "Using DirectRTCClient because room name looks like an IP.")
-            appRtcClient = DirectRTCClient(this)
+            appRtcClient = WsRTCClient(this)
         }
         // Create connection parameters.
         val urlParameters = intent.getStringExtra(EXTRA_URLPARAMETERS)
@@ -440,7 +440,9 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
 
         // Start room connection.
         logAndToast(getString(R.string.connecting_to, roomConnectionParameters!!.roomUrl))
-        appRtcClient!!.connectToRoom(roomConnectionParameters)
+        val address = "192.168.103.9"
+        val roomId = 124
+        appRtcClient!!.connectToRoom(address, roomId)
 
         // Create and audio manager that will take care of audio routing,
         // audio modes, audio device enumeration etc.
