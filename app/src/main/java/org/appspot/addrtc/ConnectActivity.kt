@@ -10,7 +10,6 @@
 package org.appspot.addrtc
 
 import android.app.Activity
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.preference.PreferenceManager
 import android.widget.TextView.OnEditorActionListener
@@ -18,16 +17,16 @@ import android.view.inputmethod.EditorInfo
 import android.view.ContextMenu
 import android.view.ContextMenu.ContextMenuInfo
 import android.widget.AdapterView.AdapterContextMenuInfo
-import android.content.Intent
 import org.json.JSONArray
 import org.json.JSONException
 import android.app.AlertDialog
-import android.content.DialogInterface
 import android.annotation.TargetApi
+import android.content.*
 import android.os.Build
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.IBinder
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -35,13 +34,15 @@ import android.view.View
 import android.webkit.URLUtil
 import android.widget.*
 import android.widget.AdapterView.OnItemClickListener
+import org.json.JSONObject
 import java.lang.NumberFormatException
 import java.util.*
 
 /**
  * Handles the initial setup where the user selects which room to join.
  */
-class ConnectActivity : Activity() {
+class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
+    private var webSocketService: WebSocketService.WebSocketBinder? = null
     private var addFavoriteButton: ImageButton? = null
     private var roomEditText: EditText? = null
     private var roomListView: ListView? = null
@@ -59,6 +60,9 @@ class ConnectActivity : Activity() {
     private var adapter: ArrayAdapter<String?>? = null
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Intent(this, WebSocketService::class.java).also { intent ->
+            startService(intent)
+        }
 
         // Get setting keys.
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false)
@@ -91,6 +95,13 @@ class ConnectActivity : Activity() {
         addFavoriteButton = findViewById(R.id.add_favorite_button)
         addFavoriteButton?.setOnClickListener(addFavoriteListener)
         requestPermissions()
+    }
+
+    override fun onDestroy() {
+        Intent(this, WebSocketService::class.java).also { intent ->
+            stopService(intent)
+        }
+        super.onDestroy()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -128,7 +139,7 @@ class ConnectActivity : Activity() {
             startActivity(intent)
             true
         } else if (item.itemId == R.id.action_loopback) {
-            connectToRoom(null, false, true, false, 0)
+            connectToRoom(null, null, false, true, false, 0)
             true
         } else {
             super.onOptionsItemSelected(item)
@@ -136,7 +147,9 @@ class ConnectActivity : Activity() {
     }
 
     public override fun onPause() {
+        webSocketService?.stopDiscovery()
         super.onPause()
+        unbindService(this)
         val room = roomEditText!!.text.toString()
         val roomListJson = JSONArray(roomList).toString()
         val editor = sharedPref!!.edit()
@@ -147,6 +160,9 @@ class ConnectActivity : Activity() {
 
     public override fun onResume() {
         super.onResume()
+        Intent(this, WebSocketService::class.java).also { intent ->
+            bindService(intent, this, Context.BIND_AUTO_CREATE)
+        }
         val room = sharedPref!!.getString(keyprefRoom, "")
         roomEditText!!.setText(room)
         roomList = ArrayList()
@@ -219,7 +235,7 @@ class ConnectActivity : Activity() {
             val useValuesFromIntent =
                 intent.getBooleanExtra(CallActivity.EXTRA_USE_VALUES_FROM_INTENT, false)
             val room = sharedPref!!.getString(keyprefRoom, "")
-            connectToRoom(room, true, loopback, useValuesFromIntent, runTimeMs)
+            connectToRoom(null, room, true, loopback, useValuesFromIntent, runTimeMs)
         }
     }
 
@@ -321,6 +337,7 @@ class ConnectActivity : Activity() {
     }
 
     private fun connectToRoom(
+        offer: JSONObject?,
         roomId: String?, commandLineRun: Boolean, loopback: Boolean,
         useValuesFromIntent: Boolean, runTimeMs: Int
     ) {
@@ -571,6 +588,9 @@ class ConnectActivity : Activity() {
             val uri = Uri.parse(roomUrl)
             val intent = Intent(this, CallActivity::class.java)
             intent.data = uri
+            if (offer != null) {
+                intent.putExtra("offer", offer.toString())
+            }
             intent.putExtra(CallActivity.EXTRA_ROOMID, roomId)
             intent.putExtra(CallActivity.EXTRA_LOOPBACK, loopback)
             intent.putExtra(CallActivity.EXTRA_VIDEO_CALL, videoCallEnabled)
@@ -672,7 +692,7 @@ class ConnectActivity : Activity() {
 
     private val roomListClickListener = OnItemClickListener { _, view, _, _ ->
         val roomId = (view as TextView).text.toString()
-        connectToRoom(roomId, false, false, false, 0)
+        connectToRoom(null, roomId, false, false, false, 0)
     }
     private val addFavoriteListener = View.OnClickListener {
         val newRoom = roomEditText!!.text.toString()
@@ -683,12 +703,62 @@ class ConnectActivity : Activity() {
     }
     private val connectListener = View.OnClickListener {
         connectToRoom(
+            null,
             roomEditText!!.text.toString(),
             false,
             false,
             false,
             0
         )
+    }
+
+    override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+        if (service != null) {
+            webSocketService = service as WebSocketService.WebSocketBinder
+            val serverPort = sharedPref?.getString(
+                getString(R.string.pref_room_server_port_key),
+                getString(R.string.pref_room_server_port_default)
+            )
+            val serverPortNumber = serverPort?.toInt() ?: 8889
+            val deviceName = sharedPref?.getString(getString(R.string.pref_room_key), getString(R.string.pref_room_default)) ?: getString(R.string.pref_room_default)
+            webSocketService!!.startServer(this, serverPortNumber, deviceName)
+        }
+    }
+
+    override fun onServiceDisconnected(name: ComponentName?) {
+        webSocketService = null
+    }
+
+    override fun onOpen() {
+        Log.d(TAG, "receive open connection")
+    }
+
+    override fun onClose(code: Int, reason: String, remote: Boolean) {
+        Log.d(TAG, "receive close connection")
+    }
+
+    override fun onMessage(json: JSONObject) {
+        try {
+            val type = json!!.optString("type")
+            if (type == "offer") {
+                runOnUiThread {
+                    connectToRoom(
+                        json,
+                        roomEditText!!.text.toString(),
+                        commandLineRun = false,
+                        loopback = false,
+                        useValuesFromIntent = false,
+                        runTimeMs = 0
+                    )
+                }
+            }
+        } catch (e: JSONException) {
+            Log.e(TAG, "JSON parsing error: $e")
+        }
+    }
+
+    override fun onError(ex: Exception) {
+//        TODO("Not yet implemented")
     }
 
     companion object {

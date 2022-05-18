@@ -20,7 +20,6 @@ import org.appspot.addrtc.AppRTCClient.RoomConnectionParameters
 import org.appspot.addrtc.PeerConnectionClient.PeerConnectionParameters
 import android.os.Bundle
 import android.view.WindowManager
-import android.content.Intent
 import org.webrtc.RendererCommon.ScalingType
 import android.content.pm.PackageManager
 import android.util.DisplayMetrics
@@ -31,21 +30,30 @@ import android.media.projection.MediaProjectionManager
 import android.media.projection.MediaProjection
 import org.appspot.addrtc.AppRTCAudioManager.AudioDevice
 import android.app.AlertDialog
+import android.content.*
 import android.os.Build
 import android.os.Handler
+import android.os.IBinder
+import android.preference.PreferenceManager
 import android.util.Log
 import android.view.View
 import android.view.Window
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 import org.webrtc.*
 import java.io.IOException
 import java.lang.RuntimeException
+import java.net.URI
 import java.util.ArrayList
+import java.util.concurrent.Executors
 
 /**
  * Activity for peer connection call setup, call waiting
  * and call view.
  */
-class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEvents {
+class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEvents,
+    ServiceConnection, SignalingServer.Events {
     private class ProxyVideoSink : VideoSink {
         private var target: VideoSink? = null
         @Synchronized
@@ -63,10 +71,14 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         }
     }
 
+    private var webSocketService: WebSocketService.WebSocketBinder? = null
+    private val executor = Executors.newSingleThreadExecutor()
+    private lateinit var sharedPref: SharedPreferences
+    private lateinit var roomId: String
+
     private val remoteProxyRenderer = ProxyVideoSink()
     private val localProxyVideoSink = ProxyVideoSink()
     private var peerConnectionClient: PeerConnectionClient? = null
-    private var appRtcClient: WsRTCClient? = null
     private var signalingParameters: SignalingParameters? = null
     private var audioManager: AppRTCAudioManager? = null
     private var pipRenderer: SurfaceViewRenderer? = null
@@ -161,6 +173,8 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
                 return
             }
         }
+        sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+        roomId = sharedPref.getString(getString(R.string.pref_room_key), getString(R.string.pref_room_default)) ?: "12345"
         val roomUri = intent.data
         if (roomUri == null) {
             logAndToast(getString(R.string.missing_url))
@@ -223,12 +237,10 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         val runTimeMs = intent.getIntExtra(EXTRA_RUNTIME, 0)
         Log.d(TAG, "VIDEO_FILE: '" + intent.getStringExtra(EXTRA_VIDEO_FILE_AS_CAMERA) + "'")
 
-        // Create connection client. Use DirectRTCClient if room name is an IP otherwise use the
-        // standard WebSocketRTCClient.
-        run {
-            Log.i(TAG, "Using DirectRTCClient because room name looks like an IP.")
-            appRtcClient = WsRTCClient(this)
+        Intent(this, WebSocketService::class.java).also { intent ->
+            bindService(intent, this, Context.BIND_AUTO_CREATE)
         }
+
         // Create connection parameters.
         val urlParameters = intent.getStringExtra(EXTRA_URLPARAMETERS)
         roomConnectionParameters =
@@ -380,6 +392,9 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
             logToast!!.cancel()
         }
         activityRunning = false
+        webSocketService?.updateEvents(null)
+        unbindService(this)
+        executor.shutdown()
         super.onDestroy()
     }
 
@@ -432,17 +447,24 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     }
 
     private fun startCall() {
-        if (appRtcClient == null) {
+/*        if (appRtcClient == null) {
             Log.e(TAG, "AppRTC client is not allocated for a call.")
             return
         }
+ */
         callStartedTimeMs = System.currentTimeMillis()
 
         // Start room connection.
-        logAndToast(getString(R.string.connecting_to, roomConnectionParameters!!.roomUrl))
-        val address = "192.168.103.9"
-        val roomId = 124
-        appRtcClient!!.connectToRoom(address, roomId)
+//        logAndToast(getString(R.string.connecting_to, roomConnectionParameters!!.roomUrl))
+//        appRtcClient!!.connectToRoom(address, roomId)
+        val offer = intent.getStringExtra("offer")
+        if (offer != null) {
+            SignalingServer.stringToJson(offer)?.let {
+                executor.execute {
+                    onMessage(it)
+                }
+            }
+        }
 
         // Create and audio manager that will take care of audio routing,
         // audio modes, audio device enumeration etc.
@@ -487,10 +509,6 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         activityRunning = false
         remoteProxyRenderer.setTarget(null)
         localProxyVideoSink.setTarget(null)
-        if (appRtcClient != null) {
-            appRtcClient!!.disconnectFromRoom()
-            appRtcClient = null
-        }
         if (pipRenderer != null) {
             pipRenderer!!.release()
             pipRenderer = null
@@ -511,10 +529,9 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
             audioManager!!.stop()
             audioManager = null
         }
-        if (connected && !isError) {
-            setResult(RESULT_OK)
-        } else {
-            setResult(RESULT_CANCELED)
+        val errorCode = if (connected && !isError) RESULT_OK else RESULT_CANCELED
+        Intent().apply {
+            setResult(errorCode, this)
         }
         finish()
     }
@@ -634,6 +651,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     }
 
     override fun onConnectedToRoom(params: SignalingParameters) {
+        callStartedTimeMs = System.currentTimeMillis()
         runOnUiThread { onConnectedToRoomInternal(params) }
     }
 
@@ -686,6 +704,68 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         reportError(description)
     }
 
+    private fun sendMessage(json: JSONObject) {
+        if (webSocketService?.connections()?.isNotEmpty() == true) {
+            webSocketService!!.broadcast(json.toString())
+//        } else if (signalingServer?.connections?.isNotEmpty() == true) {
+//            signalingServer!!.broadcast(json.toString())
+        } else {
+            reportError("Sending message in non connected state.")
+            return
+        }
+    }
+
+    fun sendOfferSdp(sdp: SessionDescription) {
+        executor.execute {
+            val json = JSONObject()
+            jsonPut(json, "sdp", sdp.description)
+            jsonPut(json, "type", "offer")
+            jsonPut(json, "from", roomId)
+            jsonPut(json, "sendto", roomId)
+            sendMessage(json)
+        }
+    }
+
+    fun sendAnswerSdp(sdp: SessionDescription) {
+        executor.execute {
+            val json = JSONObject()
+            jsonPut(json, "sdp", sdp.description)
+            jsonPut(json, "type", "answer")
+            jsonPut(json, "from", roomId)
+            jsonPut(json, "sendto", roomId)
+            sendMessage(json)
+        }
+    }
+
+    fun sendLocalIceCandidate(candidate: IceCandidate) {
+        executor.execute {
+            val json = JSONObject()
+            jsonPut(json, "type", "candidate")
+            jsonPut(json, "from", roomId)
+            jsonPut(json, "sendto", roomId)
+            jsonPut(json, "sdpMLineIndex", candidate.sdpMLineIndex)
+            jsonPut(json, "sdpMid", candidate.sdpMid)
+            jsonPut(json, "candidate", candidate.sdp)
+            sendMessage(json)
+        }
+    }
+
+    /** Send removed Ice candidates to the other participant.  */
+    fun sendLocalIceCandidateRemovals(candidates: Array<IceCandidate>) {
+        executor.execute {
+            val json = JSONObject()
+            jsonPut(json, "type", "remove-candidates")
+            jsonPut(json, "from", roomId)
+            jsonPut(json, "sendto", roomId)
+            val jsonArray = JSONArray()
+            for (candidate in candidates) {
+                jsonArray.put(toJsonCandidate(candidate))
+            }
+            jsonPut(json, "candidates", jsonArray)
+            sendMessage(json)
+        }
+    }
+
     // -----Implementation of PeerConnectionClient.PeerConnectionEvents.---------
     // Send local peer connection SDP and ICE candidates to remote party.
     // All callbacks are invoked from peer connection client looper thread and
@@ -693,14 +773,14 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     override fun onLocalDescription(desc: SessionDescription) {
         val delta = System.currentTimeMillis() - callStartedTimeMs
         runOnUiThread {
-            if (appRtcClient != null) {
-                logAndToast("Sending " + desc.type + ", delay=" + delta + "ms")
-                if (signalingParameters!!.initiator) {
-                    appRtcClient!!.sendOfferSdp(desc)
-                } else {
-                    appRtcClient!!.sendAnswerSdp(desc)
-                }
+//            if (appRtcClient != null) {
+            logAndToast("Sending " + desc.type + ", delay=" + delta + "ms")
+            if (signalingParameters!!.initiator) {
+                sendOfferSdp(desc)
+            } else {
+                sendAnswerSdp(desc)
             }
+//            }
             if (peerConnectionParameters!!.videoMaxBitrate > 0) {
                 Log.d(
                     TAG,
@@ -713,17 +793,13 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
 
     override fun onIceCandidate(candidate: IceCandidate) {
         runOnUiThread {
-            if (appRtcClient != null) {
-                appRtcClient!!.sendLocalIceCandidate(candidate)
-            }
+            sendLocalIceCandidate(candidate)
         }
     }
 
     override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) {
         runOnUiThread {
-            if (appRtcClient != null) {
-                appRtcClient!!.sendLocalIceCandidateRemovals(candidates)
-            }
+            sendLocalIceCandidateRemovals(candidates)
         }
     }
 
@@ -764,6 +840,78 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
 
     override fun onPeerConnectionError(description: String) {
         reportError(description)
+    }
+
+    override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+        if (service != null) {
+            webSocketService = service as WebSocketService.WebSocketBinder
+            webSocketService?.updateEvents(this)
+        }
+    }
+
+    override fun onServiceDisconnected(name: ComponentName?) {
+        webSocketService = null
+    }
+
+    override fun onOpen() {
+        Log.d(TAG, "open")
+    }
+
+    override fun onClose(code: Int, reason: String, remote: Boolean) {
+        Log.d(TAG, "close")
+        onChannelClose()
+    }
+
+    override fun onMessage(json: JSONObject) {
+        try {
+            val type = json.optString("type")
+            if (type == "candidate") {
+                onRemoteIceCandidate(toJavaCandidate(json))
+            } else if (type == "remove-candidates") {
+                val candidateArray = json.getJSONArray("candidates")
+                val candidate = (0 until candidateArray.length()).asIterable().map { toJavaCandidate(candidateArray.getJSONObject(it)) }.toTypedArray()
+                onRemoteIceCandidatesRemoved(candidate)
+/*                val candidates = arrayOfNulls<IceCandidate>(candidateArray.length())
+                for (i in 0 until candidateArray.length()) {
+                    candidates[i] = toJavaCandidate(candidateArray.getJSONObject(i))
+                }
+                onRemoteIceCandidatesRemoved(candidates)
+ */
+            } else if (type == "answer") {
+                val sdp = SessionDescription(
+                    SessionDescription.Type.fromCanonicalForm(type), json.getString("sdp")
+                )
+                onRemoteDescription(sdp)
+            } else if (type == "offer") {
+                val sdp = SessionDescription(
+                    SessionDescription.Type.fromCanonicalForm(type), json.getString("sdp")
+                )
+                val parameters =
+                    SignalingParameters( // Ice servers are not needed for direct connections.
+                        ArrayList(),
+                        false,  // This code will only be run on the client side. So, we are not the initiator.
+                        null,  // clientId
+                        null,  // wssUrl
+                        null,  // wssPostUrl
+                        sdp,  // offerSdp
+                        null // iceCandidates
+                    )
+                onConnectedToRoom(parameters)
+            } else if (type == "call me") {
+                startCall()
+            } else if (type == "bye") {
+//                if (signalingClient?.isOpen == true) {
+//                }
+            } else {
+                reportError("Unexpected TCP message: $json")
+            }
+        } catch (e: JSONException) {
+            reportError("TCP message JSON parsing error: $e")
+        }
+    }
+
+    override fun onError(ex: Exception) {
+        reportError("Java-WebSocket connection error: " + ex.message)
     }
 
     companion object {
@@ -837,5 +985,38 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
                 }
                 return flags
             }
+        private fun createURI(address: String, param: String): URI {
+            val correctedAddress =
+                address.replaceFirst("^http".toRegex(), "ws").replaceFirst("/$".toRegex(), "")
+            return URI.create("$correctedAddress/$param")
+        }
+
+        // Put a |key|->|value| mapping in |json|.
+        private fun jsonPut(json: JSONObject, key: String, value: Any) {
+            try {
+                json.put(key, value)
+            } catch (e: JSONException) {
+                throw RuntimeException(e)
+            }
+        }
+
+        // Converts a Java candidate to a JSONObject.
+        private fun toJsonCandidate(candidate: IceCandidate): JSONObject {
+            val json = JSONObject()
+            jsonPut(json, "sdpMLineIndex", candidate.sdpMLineIndex)
+            jsonPut(json, "sdpMid", candidate.sdpMid)
+            jsonPut(json, "candidate", candidate.sdp)
+            return json
+        }
+
+        // Converts a JSON candidate to a Java object.
+        @Throws(JSONException::class)
+        private fun toJavaCandidate(json: JSONObject?): IceCandidate {
+            return IceCandidate(
+                json!!.getString("sdpMid"),
+                json.getInt("sdpMLineIndex"),
+                json.getString("candidate")
+            )
+        }
     }
 }

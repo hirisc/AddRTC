@@ -25,7 +25,9 @@
       android:debuggable="true"
       android:supportsRtl="false"
       tools:ignore="HardcodedDebugMode">
-
+    <service android:name=".WebSocketService"
+        android:enabled="true"
+        android:exported="false"/>
     <activity android:name="ConnectActivity"
         android:windowSoftInputMode="adjustPan"
         android:theme="@style/AppTheme"
