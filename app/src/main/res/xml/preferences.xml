@@ -1,6 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
     <PreferenceCategory
+        android:key="@string/pref_miscsettings_key"
+        android:title="@string/pref_miscsettings_title">
+
+        <EditTextPreference
+            android:key="@string/pref_devicename_key"
+            android:title="@string/pref_devicename_title"
+            android:inputType="text"
+            android:defaultValue="@string/pref_devicename_default"
+            android:dialogTitle="@string/pref_devicename_dlg" />
+
+        <EditTextPreference
+            android:defaultValue="@string/pref_room_server_port_default"
+            android:dialogTitle="@string/pref_room_server_port_dlg"
+            android:inputType="numberDecimal"
+            android:key="@string/pref_room_server_port_key"
+            android:title="@string/pref_room_server_port_title" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_displayhud_key"
+            android:title="@string/pref_displayhud_title"
+            android:dialogTitle="@string/pref_displayhud_dlg"
+            android:defaultValue="@string/pref_displayhud_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_tracing_key"
+            android:title="@string/pref_tracing_title"
+            android:dialogTitle="@string/pref_tracing_dlg"
+            android:defaultValue="@string/pref_tracing_default" />
+
+        <CheckBoxPreference
+            android:key="@string/pref_enable_rtceventlog_key"
+            android:title="@string/pref_enable_rtceventlog_title"
+            android:defaultValue="@string/pref_enable_rtceventlog_default"/>
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:key="@string/pref_videosettings_key"
         android:title="@string/pref_videosettings_title">
 
@@ -213,42 +249,6 @@
             android:inputType="number"
             android:defaultValue="@string/pref_data_id_default"
             android:dialogTitle="@string/pref_data_id_dlg" />
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:key="@string/pref_miscsettings_key"
-        android:title="@string/pref_miscsettings_title">
-
-        <EditTextPreference
-            android:key="@string/pref_room_key"
-            android:title="@string/pref_room_title"
-            android:inputType="text"
-            android:defaultValue="@string/pref_room_default"
-            android:dialogTitle="@string/pref_room_dlg" />
-
-        <EditTextPreference
-            android:key="@string/pref_room_server_url_key"
-            android:title="@string/pref_room_server_url_title"
-            android:inputType="text"
-            android:defaultValue="@string/pref_room_server_url_default"
-            android:dialogTitle="@string/pref_room_server_url_dlg" />
-
-        <CheckBoxPreference
-            android:key="@string/pref_displayhud_key"
-            android:title="@string/pref_displayhud_title"
-            android:dialogTitle="@string/pref_displayhud_dlg"
-            android:defaultValue="@string/pref_displayhud_default" />
-
-        <CheckBoxPreference
-            android:key="@string/pref_tracing_key"
-            android:title="@string/pref_tracing_title"
-            android:dialogTitle="@string/pref_tracing_dlg"
-            android:defaultValue="@string/pref_tracing_default" />
-
-        <CheckBoxPreference
-            android:key="@string/pref_enable_rtceventlog_key"
-            android:title="@string/pref_enable_rtceventlog_title"
-            android:defaultValue="@string/pref_enable_rtceventlog_default"/>
     </PreferenceCategory>
 
 </PreferenceScreen>

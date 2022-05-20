@@ -13,40 +13,7 @@
         android:id="@+id/room_edittext_description"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/room_description"/>
-
-    <LinearLayout
-        android:orientation="horizontal"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center"
-        android:layout_marginBottom="8dp">
-
-        <!-- TODO(crbug.com/900912): Fix and remove lint ignore -->
-        <EditText
-            tools:ignore="LabelFor,Autofill"
-            android:id="@+id/room_edittext"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:maxLines="1"
-            android:imeOptions="actionDone"
-            android:inputType="text"/>
-
-        <ImageButton
-            android:id="@+id/connect_button"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:contentDescription="@string/connect_description"
-            android:background="@android:drawable/sym_action_call" />
-
-        <ImageButton
-            android:id="@+id/add_favorite_button"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:contentDescription="@string/add_favorite_description"
-            android:background="@android:drawable/ic_input_add" />
-    </LinearLayout>
+        android:text="@string/devices_description"/>
 
     <TextView
         android:id="@+id/room_listview_description"
@@ -56,7 +23,7 @@
         android:lines="1"
         android:maxLines="1"
         android:textAppearance="?android:attr/textAppearanceMedium"
-        android:text="@string/favorites"
+        android:text="@string/devices"
         android:gravity="center_vertical"/>
 
     <FrameLayout
@@ -75,6 +42,6 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:gravity="center"
-            android:text="@string/no_favorites" />
+            android:text="@string/no_devices" />
     </FrameLayout>
 </LinearLayout>

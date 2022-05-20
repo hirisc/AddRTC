@@ -31,6 +31,7 @@ import android.media.projection.MediaProjection
 import org.appspot.addrtc.AppRTCAudioManager.AudioDevice
 import android.app.AlertDialog
 import android.content.*
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -44,7 +45,6 @@ import org.json.JSONObject
 import org.webrtc.*
 import java.io.IOException
 import java.lang.RuntimeException
-import java.net.URI
 import java.util.ArrayList
 import java.util.concurrent.Executors
 
@@ -74,6 +74,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     private var webSocketService: WebSocketService.WebSocketBinder? = null
     private val executor = Executors.newSingleThreadExecutor()
     private lateinit var sharedPref: SharedPreferences
+    private var roomUri: Uri? = null
     private lateinit var roomId: String
 
     private val remoteProxyRenderer = ProxyVideoSink()
@@ -174,26 +175,11 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
             }
         }
         sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
-        roomId = sharedPref.getString(getString(R.string.pref_room_key), getString(R.string.pref_room_default)) ?: "12345"
-        val roomUri = intent.data
-        if (roomUri == null) {
-            logAndToast(getString(R.string.missing_url))
-            Log.e(TAG, "Didn't get any URL in intent!")
-            setResult(RESULT_CANCELED)
-            finish()
-            return
-        }
+        roomUri = intent.data
 
         // Get Intent parameters.
-        val roomId = intent.getStringExtra(EXTRA_ROOMID)
+        roomId = intent.getStringExtra(EXTRA_ROOMID) ?: ""
         Log.d(TAG, "Room ID: $roomId")
-        if (roomId == null || roomId.isEmpty()) {
-            logAndToast(getString(R.string.missing_url))
-            Log.e(TAG, "Incorrect room ID in intent!")
-            setResult(RESULT_CANCELED)
-            finish()
-            return
-        }
         val loopback = intent.getBooleanExtra(EXTRA_LOOPBACK, false)
         val tracing = intent.getBooleanExtra(EXTRA_TRACING, false)
         var videoWidth = intent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
@@ -278,7 +264,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         if (screencaptureEnabled) {
             startScreenCapture()
         } else {
-            startCall()
+//            startCall()
         }
     }
 
@@ -392,7 +378,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
             logToast!!.cancel()
         }
         activityRunning = false
-        webSocketService?.updateEvents(null)
+        webSocketService?.closeConnections()
         unbindService(this)
         executor.shutdown()
         super.onDestroy()
@@ -447,16 +433,9 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     }
 
     private fun startCall() {
-/*        if (appRtcClient == null) {
-            Log.e(TAG, "AppRTC client is not allocated for a call.")
-            return
-        }
- */
         callStartedTimeMs = System.currentTimeMillis()
 
         // Start room connection.
-//        logAndToast(getString(R.string.connecting_to, roomConnectionParameters!!.roomUrl))
-//        appRtcClient!!.connectToRoom(address, roomId)
         val offer = intent.getStringExtra("offer")
         if (offer != null) {
             SignalingServer.stringToJson(offer)?.let {
@@ -464,6 +443,17 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
                     onMessage(it)
                 }
             }
+        } else {
+            val signalingParameters = SignalingParameters( // Ice servers are not needed for direct connections.
+                ArrayList(),
+                true,
+                null,  // clientId
+                null,  // wssUrl
+                null,  // wwsPostUrl
+                null,  // offerSdp
+                null // iceCandidates
+            )
+            onConnectedToRoom(signalingParameters)
         }
 
         // Create and audio manager that will take care of audio routing,
@@ -705,10 +695,7 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     }
 
     private fun sendMessage(json: JSONObject) {
-        if (webSocketService?.connections()?.isNotEmpty() == true) {
-            webSocketService!!.broadcast(json.toString())
-//        } else if (signalingServer?.connections?.isNotEmpty() == true) {
-//            signalingServer!!.broadcast(json.toString())
+        if (webSocketService?.send(json.toString()) == true) {
         } else {
             reportError("Sending message in non connected state.")
             return
@@ -845,7 +832,14 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
         if (service != null) {
             webSocketService = service as WebSocketService.WebSocketBinder
-            webSocketService?.updateEvents(this)
+            if (roomUri == null) {
+                webSocketService?.updateEvents(this)
+                startCall()
+            } else {
+                runOnUiThread {
+                    webSocketService?.connectClient(this, roomUri!!)
+                }
+            }
         }
     }
 
@@ -855,6 +849,11 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
 
     override fun onOpen() {
         Log.d(TAG, "open")
+        if (roomUri != null) {
+            runOnUiThread {
+                startCall()
+            }
+        }
     }
 
     override fun onClose(code: Int, reason: String, remote: Boolean) {
@@ -985,11 +984,6 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
                 }
                 return flags
             }
-        private fun createURI(address: String, param: String): URI {
-            val correctedAddress =
-                address.replaceFirst("^http".toRegex(), "ws").replaceFirst("/$".toRegex(), "")
-            return URI.create("$correctedAddress/$param")
-        }
 
         // Put a |key|->|value| mapping in |json|.
         private fun jsonPut(json: JSONObject, key: String, value: Any) {

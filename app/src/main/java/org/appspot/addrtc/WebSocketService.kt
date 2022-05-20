@@ -3,40 +3,63 @@ package org.appspot.addrtc
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
-import org.java_websocket.WebSocket
+import org.java_websocket.client.WebSocketClient
+import org.java_websocket.handshake.ServerHandshake
+import java.net.*
+import java.util.*
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
-
 
 class WebSocketService : Service() {
+    interface NsdEvents {
+        fun onServiceResolved(service: NsdServiceInfo)
+        fun onServiceLost(service: NsdServiceInfo)
+    }
+
     inner class WebSocketBinder : Binder() {
         private var portNumber = 8888
         private var deviceName = "MyDevice"
-        fun startServer(events: SignalingServer.Events, port: Int, name: String) {
+        fun startServer(signalingEvents: SignalingServer.Events, port: Int, name: String, nsdEvents: NsdEvents? = null) {
             portNumber = port
             deviceName = name
             server?.stop()
-            server = SignalingServer(events, port).apply {
+            this@WebSocketService.nsdEvents = nsdEvents
+            server = SignalingServer(signalingEvents, port).apply {
                 start()
                 startDiscovery()
             }
         }
 
-        fun updateEvents(events: SignalingServer.Events?) {
+        fun updateEvents(events: SignalingServer.Events) {
             server?.updateEvents(events)
         }
 
-        fun connections() : Collection<WebSocket>? {
-            return server?.connections
+        fun send(message: String) : Boolean {
+            if (socketClient?.isOpen == true) {
+                socketClient?.send(message)
+            } else if (server?.connections?.isNotEmpty() == true) {
+                server?.broadcast(message)
+            } else {
+                return false
+            }
+            return true
         }
 
-        fun broadcast(message: String) {
-            server?.broadcast(message)
+        fun closeConnections() {
+            socketClient?.close()
+            server?.connections?.forEach {
+                it.close()
+            }
+        }
+
+        fun connectClient(events: SignalingServer.Events, uri: Uri) {
+            socketClient = SocketClient(events, uri)
+            socketClient?.connect()
         }
 
         fun stopDiscovery() {
@@ -53,12 +76,54 @@ class WebSocketService : Service() {
         }
     }
 
+    private class SocketClient(private val socketEvents: SignalingServer.Events, uri: Uri) : WebSocketClient(
+        createURI(uri.toString())
+    ) {
+        override fun onOpen(handshakedata: ServerHandshake) {
+            socketEvents.onOpen()
+        }
+
+        override fun onMessage(message: String) {
+            SignalingServer.stringToJson(message)?.let {
+                socketEvents.onMessage(it)
+            }
+        }
+
+        override fun onClose(code: Int, reason: String, remote: Boolean) {
+            socketEvents.onClose(code, reason, remote)
+        }
+
+        override fun onError(ex: Exception) {
+            socketEvents.onError(ex)
+        }
+    }
+
     private val binder = WebSocketBinder()
     private var server: SignalingServer? = null
-    private var localIpAddress: String? = null
-    private val roomId: String? = null
+    private var localIpAddress = getLocalIpAddress()
     private var nsdManager: NsdManager? = null
+    private var nsdEvents: NsdEvents? = null
+    private var socketClient: SocketClient? = null
     private val executor = Executors.newSingleThreadExecutor()
+
+    private fun getLocalIpAddress(): String? {
+        try {
+            val en: Enumeration<NetworkInterface> = NetworkInterface.getNetworkInterfaces()
+            while (en.hasMoreElements()) {
+                val `interface`: NetworkInterface = en.nextElement()
+                val enumIpAddress: Enumeration<InetAddress> = `interface`.inetAddresses
+                while (enumIpAddress.hasMoreElements()) {
+                    val inetAddress: InetAddress = enumIpAddress.nextElement()
+                    if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
+                        return inetAddress.getHostAddress()
+                    }
+                }
+            }
+        } catch (ex: SocketException) {
+            ex.printStackTrace()
+        }
+        return null
+    }
 
     override fun onBind(intent: Intent): IBinder {
         return binder
@@ -128,16 +193,8 @@ class WebSocketService : Service() {
             if (host.isLoopbackAddress || (host.hostAddress == localIpAddress)) {
                 Log.d(TAG, "Resolve local service ${host.hostAddress}")
             } else {
-                if (host.isSiteLocalAddress) {
-                    Log.d(TAG, "site local")
-                }
                 Log.d(TAG, "Resolve external service ${info.serviceName} on ${host.hostAddress}:${info.port}")
-/*                val roomId = roomId
-                if (upper.signalingClient?.isOpen != true) {
-                    upper.signalingClient = WsClient(upper, "http://${host.hostAddress}:${info.port}", roomId)
-                    upper.signalingClient?.connect()
-                }
- */
+                nsdEvents?.onServiceResolved(info)
             }
         }
     }
@@ -156,15 +213,13 @@ class WebSocketService : Service() {
                 // A service was found! Do something with it.
                 Log.d(TAG, "Service discovery success $service")
                 if (service.serviceType.equals(SERVICE_TYPE)) {
-//            if (service.serviceType.contains(SERVICE_TYPE) and service.serviceName.contains(SERVICE_NAME)) {
-//                this@WsRTCClient.executor.execute {
-//                executor.execute {
-                    // サービスが見つかる毎にそれぞれ別インスタンスのResolveListenerを渡す必要があるらしい
-                    // https://android.googlesource.com/platform/frameworks/base/+/e7369bd4dfa4fb3fdced5b52160a5d0209132292
-                    // https://stackoverflow.com/questions/25815162/listener-already-in-use-service-discovery
-                    val listener = ResolveListener()
-                    nsdManager?.resolveService(service, listener)
-//                }
+                    executor.execute {
+                        // It seems that generating instances of ResolveListener for each services is necessary.
+                        // https://android.googlesource.com/platform/frameworks/base/+/e7369bd4dfa4fb3fdced5b52160a5d0209132292
+                        // https://stackoverflow.com/questions/25815162/listener-already-in-use-service-discovery
+                        val listener = ResolveListener()
+                        nsdManager?.resolveService(service, listener)
+                    }
                 }
             }
 
@@ -172,6 +227,9 @@ class WebSocketService : Service() {
                 // When the network service is no longer available.
                 // Internal bookkeeping code goes here.
                 Log.e(TAG, "service lost: $service")
+                executor.execute {
+                    nsdEvents?.onServiceLost(service)
+                }
             }
 
             override fun onDiscoveryStopped(serviceType: String) {
@@ -193,5 +251,10 @@ class WebSocketService : Service() {
     companion object {
         private const val TAG = "RTCClientService"
         private const val SERVICE_TYPE = "_fax._tcp."
+        private fun createURI(address: String): URI {
+            val correctedAddress =
+                address.replaceFirst("^http".toRegex(), "ws").replaceFirst("/$".toRegex(), "")
+            return URI.create(correctedAddress)
+        }
     }
 }

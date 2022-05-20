@@ -12,12 +12,6 @@ package org.appspot.addrtc
 import android.app.Activity
 import android.os.Bundle
 import android.preference.PreferenceManager
-import android.widget.TextView.OnEditorActionListener
-import android.view.inputmethod.EditorInfo
-import android.view.ContextMenu
-import android.view.ContextMenu.ContextMenuInfo
-import android.widget.AdapterView.AdapterContextMenuInfo
-import org.json.JSONArray
 import org.json.JSONException
 import android.app.AlertDialog
 import android.annotation.TargetApi
@@ -26,25 +20,23 @@ import android.os.Build
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.nsd.NsdServiceInfo
 import android.os.IBinder
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.view.View
-import android.webkit.URLUtil
 import android.widget.*
 import android.widget.AdapterView.OnItemClickListener
 import org.json.JSONObject
 import java.lang.NumberFormatException
+import java.net.URISyntaxException
 import java.util.*
 
 /**
  * Handles the initial setup where the user selects which room to join.
  */
-class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
+class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, WebSocketService.NsdEvents {
     private var webSocketService: WebSocketService.WebSocketBinder? = null
-    private var addFavoriteButton: ImageButton? = null
-    private var roomEditText: EditText? = null
     private var roomListView: ListView? = null
     private var sharedPref: SharedPreferences? = null
     private var keyprefResolution: String? = null
@@ -53,9 +45,8 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
     private var keyprefVideoBitrateValue: String? = null
     private var keyprefAudioBitrateType: String? = null
     private var keyprefAudioBitrateValue: String? = null
-    private var keyprefRoomServerUrl: String? = null
-    private var keyprefRoom: String? = null
     private var keyprefRoomList: String? = null
+    private var devicesList = mutableMapOf<String, String>()
     private var roomList: ArrayList<String?>? = null
     private var adapter: ArrayAdapter<String?>? = null
     public override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,27 +64,12 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
         keyprefVideoBitrateValue = getString(R.string.pref_maxvideobitratevalue_key)
         keyprefAudioBitrateType = getString(R.string.pref_startaudiobitrate_key)
         keyprefAudioBitrateValue = getString(R.string.pref_startaudiobitratevalue_key)
-        keyprefRoomServerUrl = getString(R.string.pref_room_server_url_key)
-        keyprefRoom = getString(R.string.pref_room_key)
         keyprefRoomList = getString(R.string.pref_room_list_key)
         setContentView(R.layout.activity_connect)
-        roomEditText = findViewById(R.id.room_edittext)
-        roomEditText?.setOnEditorActionListener(OnEditorActionListener { _, i, _ ->
-            if (i == EditorInfo.IME_ACTION_DONE) {
-                addFavoriteButton!!.performClick()
-                return@OnEditorActionListener true
-            }
-            false
-        })
-        roomEditText?.requestFocus()
         roomListView = findViewById(R.id.room_listview)
         roomListView?.emptyView = findViewById(android.R.id.empty)
         roomListView?.onItemClickListener = roomListClickListener
-        registerForContextMenu(roomListView)
-        val connectButton = findViewById<ImageButton>(R.id.connect_button)
-        connectButton.setOnClickListener(connectListener)
-        addFavoriteButton = findViewById(R.id.add_favorite_button)
-        addFavoriteButton?.setOnClickListener(addFavoriteListener)
+//        registerForContextMenu(roomListView)
         requestPermissions()
     }
 
@@ -107,29 +83,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.connect_menu, menu)
         return true
-    }
-
-    override fun onCreateContextMenu(menu: ContextMenu, v: View, menuInfo: ContextMenuInfo) {
-        if (v.id == R.id.room_listview) {
-            val info = menuInfo as AdapterContextMenuInfo
-            menu.setHeaderTitle(roomList!![info.position])
-            val menuItems = resources.getStringArray(R.array.roomListContextMenu)
-            for (i in menuItems.indices) {
-                menu.add(Menu.NONE, i, i, menuItems[i])
-            }
-        } else {
-            super.onCreateContextMenu(menu, v, menuInfo)
-        }
-    }
-
-    override fun onContextItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == REMOVE_FAVORITE_INDEX) {
-            val info = item.menuInfo as AdapterContextMenuInfo
-            roomList!!.removeAt(info.position)
-            adapter!!.notifyDataSetChanged()
-            return true
-        }
-        return super.onContextItemSelected(item)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -150,12 +103,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
         webSocketService?.stopDiscovery()
         super.onPause()
         unbindService(this)
-        val room = roomEditText!!.text.toString()
-        val roomListJson = JSONArray(roomList).toString()
-        val editor = sharedPref!!.edit()
-        editor.putString(keyprefRoom, room)
-        editor.putString(keyprefRoomList, roomListJson)
-        editor.apply()
     }
 
     public override fun onResume() {
@@ -163,20 +110,7 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
         Intent(this, WebSocketService::class.java).also { intent ->
             bindService(intent, this, Context.BIND_AUTO_CREATE)
         }
-        val room = sharedPref!!.getString(keyprefRoom, "")
-        roomEditText!!.setText(room)
         roomList = ArrayList()
-        val roomListJson = sharedPref!!.getString(keyprefRoomList, null)
-        if (roomListJson != null) {
-            try {
-                val jsonArray = JSONArray(roomListJson)
-                for (i in 0 until jsonArray.length()) {
-                    roomList!!.add(jsonArray[i].toString())
-                }
-            } catch (e: JSONException) {
-                Log.e(TAG, "Failed to load room list: $e")
-            }
-        }
         adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, roomList!!)
         roomListView!!.adapter = adapter
         if (adapter!!.count > 0) {
@@ -234,8 +168,7 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
             val runTimeMs = intent.getIntExtra(CallActivity.EXTRA_RUNTIME, 0)
             val useValuesFromIntent =
                 intent.getBooleanExtra(CallActivity.EXTRA_USE_VALUES_FROM_INTENT, false)
-            val room = sharedPref!!.getString(keyprefRoom, "")
-            connectToRoom(null, room, true, loopback, useValuesFromIntent, runTimeMs)
+            connectToRoom(null, null, true, loopback, useValuesFromIntent, runTimeMs)
         }
     }
 
@@ -338,19 +271,11 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
 
     private fun connectToRoom(
         offer: JSONObject?,
-        roomId: String?, commandLineRun: Boolean, loopback: Boolean,
+        address: String?,
+        commandLineRun: Boolean, loopback: Boolean,
         useValuesFromIntent: Boolean, runTimeMs: Int
     ) {
-        var roomId = roomId
         Companion.commandLineRun = commandLineRun
-
-        // roomId is random for loopback.
-        if (loopback) {
-            roomId = Random().nextInt(100000000).toString()
-        }
-        val roomUrl = sharedPref!!.getString(
-            keyprefRoomServerUrl, getString(R.string.pref_room_server_url_default)
-        )
 
         // Video call enabled flag.
         val videoCallEnabled = sharedPrefGetBoolean(
@@ -583,9 +508,11 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
         )
 
         // Start AppRTCMobile activity.
-        Log.d(TAG, "Connecting to room $roomId at URL $roomUrl")
-        if (validateUrl(roomUrl)) {
-            val uri = Uri.parse(roomUrl)
+        try {
+            val uri = address?.let {
+                Uri.parse("http:/$address")
+            }
+            val roomId = address
             val intent = Intent(this, CallActivity::class.java)
             intent.data = uri
             if (offer != null) {
@@ -671,45 +598,16 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
                 }
             }
             startActivityForResult(intent, CONNECTION_REQUEST)
+        } catch (e: URISyntaxException) {
+            Log.d(TAG, "URI syntax error")
         }
     }
 
-    private fun validateUrl(url: String?): Boolean {
-        if (URLUtil.isHttpsUrl(url) || URLUtil.isHttpUrl(url)) {
-            return true
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getText(R.string.invalid_url_title))
-            .setMessage(getString(R.string.invalid_url_text, url))
-            .setCancelable(false)
-            .setNeutralButton(
-                R.string.ok
-            ) { dialog, _ -> dialog.cancel() }
-            .create()
-            .show()
-        return false
-    }
-
-    private val roomListClickListener = OnItemClickListener { _, view, _, _ ->
+    private val roomListClickListener = OnItemClickListener { _, view, position, id ->
         val roomId = (view as TextView).text.toString()
-        connectToRoom(null, roomId, false, false, false, 0)
-    }
-    private val addFavoriteListener = View.OnClickListener {
-        val newRoom = roomEditText!!.text.toString()
-        if (newRoom.isNotEmpty() && !roomList!!.contains(newRoom)) {
-            adapter!!.add(newRoom)
-            adapter!!.notifyDataSetChanged()
+        devicesList[roomId]?.let { device ->
+            connectToRoom(null, device, false, false, false, 0)
         }
-    }
-    private val connectListener = View.OnClickListener {
-        connectToRoom(
-            null,
-            roomEditText!!.text.toString(),
-            false,
-            false,
-            false,
-            0
-        )
     }
 
     override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -720,8 +618,8 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
                 getString(R.string.pref_room_server_port_default)
             )
             val serverPortNumber = serverPort?.toInt() ?: 8889
-            val deviceName = sharedPref?.getString(getString(R.string.pref_room_key), getString(R.string.pref_room_default)) ?: getString(R.string.pref_room_default)
-            webSocketService!!.startServer(this, serverPortNumber, deviceName)
+            val deviceName = sharedPref?.getString(getString(R.string.pref_devicename_key), getString(R.string.pref_devicename_default)) ?: getString(R.string.pref_devicename_default)
+            webSocketService!!.startServer(this, serverPortNumber, deviceName, this)
         }
     }
 
@@ -739,12 +637,12 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
 
     override fun onMessage(json: JSONObject) {
         try {
-            val type = json!!.optString("type")
+            val type = json.optString("type")
             if (type == "offer") {
                 runOnUiThread {
                     connectToRoom(
                         json,
-                        roomEditText!!.text.toString(),
+                        null,
                         commandLineRun = false,
                         loopback = false,
                         useValuesFromIntent = false,
@@ -758,7 +656,30 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events {
     }
 
     override fun onError(ex: Exception) {
-//        TODO("Not yet implemented")
+        Log.e(TAG, "receive connection error")
+    }
+
+    override fun onServiceResolved(service: NsdServiceInfo) {
+        val address = "${service.host}:${service.port}"
+        devicesList[service.serviceName] = address
+        val key = roomList?.find { it == service.serviceName }
+        if (key == null) {
+            roomList?.add(service.serviceName)
+            runOnUiThread {
+                adapter?.notifyDataSetChanged()
+            }
+        }
+    }
+
+    override fun onServiceLost(service: NsdServiceInfo) {
+        val name = service.serviceName
+        devicesList.remove(name)
+        roomList?.find { it == service.serviceName }?.let {
+            roomList?.remove(it)
+            runOnUiThread {
+                adapter?.notifyDataSetChanged()
+            }
+        }
     }
 
     companion object {

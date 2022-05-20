@@ -3,12 +3,11 @@
     <string name="app_name" translatable="false">AddRTC</string>
     <string name="settings_name" translatable="false">AddRTC Settings</string>
     <string name="disconnect_call">Disconnect Call</string>
-    <string name="room_description">
-        Please enter a room name. Room names are shared with everyone, so think
-        of something unique and send it to a friend.
+    <string name="devices_description">
+        Please click a name of devices below to talk with.
     </string>
-    <string name="favorites">Favorites</string>
-    <string name="no_favorites">No favorites</string>
+    <string name="devices">Devices</string>
+    <string name="no_devices">No devices</string>
     <string name="invalid_url_title">Invalid URL</string>
     <string name="invalid_url_text">The URL or room name you entered resulted in an invalid URL: %1$s
     </string>
@@ -77,7 +76,7 @@
     <string name="pref_videocodec_key">videocodec_preference</string>
     <string name="pref_videocodec_title">Default video codec.</string>
     <string name="pref_videocodec_dlg">Select default video codec.</string>
-    <string name="pref_videocodec_default">VP8</string>
+    <string name="pref_videocodec_default">H264 High</string>
 
     <string name="pref_hwcodec_key">hwcodec_preference</string>
     <string name="pref_hwcodec_title">Video codec hardware acceleration.</string>
@@ -200,19 +199,15 @@
     <string name="pref_miscsettings_key">misc_settings_key</string>
     <string name="pref_miscsettings_title">Miscellaneous settings.</string>
 
-    <string name="pref_room_key">room_preference</string>
-    <string name="pref_room_title">Room name.</string>
-    <string name="pref_room_dlg">Enter a name.</string>
-    <string name="pref_room_default" translatable="false">Device0</string>
+    <string name="pref_devicename_key">device_name_preference</string>
+    <string name="pref_devicename_title">Device name.</string>
+    <string name="pref_devicename_dlg">Enter name of this device.</string>
+    <string name="pref_devicename_default" translatable="false">Device0</string>
     <string name="pref_room_list_key">room_list_preference</string>
     <string name="pref_room_server_port_key">room_server_port_preference</string>
     <string name="pref_room_server_port_title">Server port.</string>
     <string name="pref_room_server_port_dlg">Enter a port number.</string>
     <string name="pref_room_server_port_default" translatable="false">8887</string>
-    <string name="pref_room_server_url_key">room_server_url_preference</string>
-    <string name="pref_room_server_url_title">Room server URL.</string>
-    <string name="pref_room_server_url_dlg">Enter a room server URL.</string>
-    <string name="pref_room_server_url_default" translatable="false">https://192.168.100.178</string>
 
     <string name="pref_displayhud_key">displayhud_preference</string>
     <string name="pref_displayhud_title">Display call statistics.</string>
