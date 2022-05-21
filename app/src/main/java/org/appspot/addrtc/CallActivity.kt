@@ -134,7 +134,6 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         pipRenderer?.setOnClickListener { setSwappedFeeds(!isSwappedFeeds) }
         fullscreenRenderer?.setOnClickListener(listener)
         remoteSinks.add(remoteProxyRenderer)
-        val intent = intent
         val eglBase = EglBase.create()
 
         // Create video renderers.
@@ -178,46 +177,42 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         roomUri = intent.data
 
         // Get Intent parameters.
-        roomId = intent.getStringExtra(EXTRA_ROOMID) ?: ""
+        roomId = intent.getStringExtra(EXTRA_ROOMID) ?: "unknown"
         Log.d(TAG, "Room ID: $roomId")
         val loopback = intent.getBooleanExtra(EXTRA_LOOPBACK, false)
-        val tracing = intent.getBooleanExtra(EXTRA_TRACING, false)
-        var videoWidth = intent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
-        var videoHeight = intent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
-        screencaptureEnabled = intent.getBooleanExtra(EXTRA_SCREENCAPTURE, false)
-        // If capturing format is not specified for screencapture, use screen resolution.
-        if (screencaptureEnabled && videoWidth == 0 && videoHeight == 0) {
-            val displayMetrics = displayMetrics
-            videoWidth = displayMetrics.widthPixels
-            videoHeight = displayMetrics.heightPixels
-        }
-        var dataChannelParameters: DataChannelParameters? = null
-        if (intent.getBooleanExtra(EXTRA_DATA_CHANNEL_ENABLED, false)) {
-            dataChannelParameters = DataChannelParameters(
-                intent.getBooleanExtra(EXTRA_ORDERED, true),
-                intent.getIntExtra(EXTRA_MAX_RETRANSMITS_MS, -1),
-                intent.getIntExtra(EXTRA_MAX_RETRANSMITS, -1),
-                intent.getStringExtra(EXTRA_PROTOCOL),
-                intent.getBooleanExtra(EXTRA_NEGOTIATED, false),
-                intent.getIntExtra(EXTRA_ID, -1)
+        val tracing = sharedPref.getBoolean(getString(R.string.pref_tracing_key), false)
+        screencaptureEnabled = sharedPref.getBoolean(getString(R.string.pref_screencapture_key), false)
+        val (videoWidth, videoHeight) = getVideoResolutionFromSettings()
+        val dataChannelEnabled = sharedPrefGetBoolean(R.string.pref_enable_datachannel_key, R.string.pref_enable_datachannel_default)
+        val dataChannelParameters: DataChannelParameters? = if (dataChannelEnabled) {
+            DataChannelParameters(
+                sharedPrefGetBoolean(R.string.pref_ordered_key, R.string.pref_ordered_default),
+                sharedPrefGetInteger(R.string.pref_max_retransmit_time_ms_key, R.string.pref_max_retransmit_time_ms_default),
+                sharedPrefGetInteger(R.string.pref_max_retransmits_key, R.string.pref_max_retransmits_default),
+                sharedPref.getString(getString(R.string.pref_data_protocol_key), getString(R.string.pref_data_protocol_default)),
+                sharedPrefGetBoolean(R.string.pref_negotiated_key, R.string.pref_negotiated_default),
+                sharedPrefGetInteger(R.string.pref_data_id_key, R.string.pref_data_id_default)
             )
-        }
+        } else null
+        val videoCallEnabled = sharedPrefGetBoolean(R.string.pref_videocall_key, R.string.pref_videocall_default)
         peerConnectionParameters = PeerConnectionParameters(
-            intent.getBooleanExtra(EXTRA_VIDEO_CALL, true), loopback,
-            tracing, videoWidth, videoHeight, intent.getIntExtra(EXTRA_VIDEO_FPS, 0),
-            intent.getIntExtra(EXTRA_VIDEO_BITRATE, 0), intent.getStringExtra(EXTRA_VIDEOCODEC),
-            intent.getBooleanExtra(EXTRA_HWCODEC_ENABLED, true),
-            intent.getBooleanExtra(EXTRA_FLEXFEC_ENABLED, false),
-            intent.getIntExtra(EXTRA_AUDIO_BITRATE, 0), intent.getStringExtra(EXTRA_AUDIOCODEC),
-            intent.getBooleanExtra(EXTRA_NOAUDIOPROCESSING_ENABLED, false),
-            intent.getBooleanExtra(EXTRA_AECDUMP_ENABLED, false),
-            intent.getBooleanExtra(EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED, false),
-            intent.getBooleanExtra(EXTRA_OPENSLES_ENABLED, false),
-            intent.getBooleanExtra(EXTRA_DISABLE_BUILT_IN_AEC, false),
-            intent.getBooleanExtra(EXTRA_DISABLE_BUILT_IN_AGC, false),
-            intent.getBooleanExtra(EXTRA_DISABLE_BUILT_IN_NS, false),
-            intent.getBooleanExtra(EXTRA_DISABLE_WEBRTC_AGC_AND_HPF, false),
-            intent.getBooleanExtra(EXTRA_ENABLE_RTCEVENTLOG, false), dataChannelParameters
+            videoCallEnabled,
+            loopback,
+            tracing, videoWidth, videoHeight,
+            getCameraFpsFromSettings(),
+            getVideoBitrateFromSettings(), sharedPref.getString(getString(R.string.pref_videocodec_key), getString(R.string.pref_videocodec_default)),
+            sharedPrefGetBoolean(R.string.pref_hwcodec_key, R.string.pref_hwcodec_default),
+            sharedPrefGetBoolean(R.string.pref_flexfec_key, R.string.pref_flexfec_default),
+            getAudioBitrateFromSettings(), sharedPref.getString(getString(R.string.pref_audiocodec_key), getString(R.string.pref_audiocodec_default)),
+            sharedPrefGetBoolean(R.string.pref_noaudioprocessing_key, R.string.pref_noaudioprocessing_default),
+            sharedPrefGetBoolean(R.string.pref_aecdump_key, R.string.pref_aecdump_default),
+            sharedPrefGetBoolean(R.string.pref_enable_save_input_audio_to_file_key, R.string.pref_enable_save_input_audio_to_file_default),
+            sharedPrefGetBoolean(R.string.pref_opensles_key, R.string.pref_opensles_default),
+            sharedPrefGetBoolean(R.string.pref_disable_built_in_aec_key, R.string.pref_disable_built_in_aec_default),
+            sharedPrefGetBoolean(R.string.pref_disable_built_in_agc_key, R.string.pref_disable_built_in_agc_default),
+            sharedPrefGetBoolean(R.string.pref_disable_built_in_ns_key, R.string.pref_disable_built_in_ns_default),
+            sharedPrefGetBoolean(R.string.pref_disable_webrtc_agc_and_hpf_key, R.string.pref_disable_webrtc_agc_default),
+            sharedPrefGetBoolean(R.string.pref_enable_rtceventlog_key, R.string.pref_enable_rtceventlog_default), dataChannelParameters
         )
         commandLineRun = intent.getBooleanExtra(EXTRA_CMDLINE, false)
         val runTimeMs = intent.getIntExtra(EXTRA_RUNTIME, 0)
@@ -228,9 +223,8 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         }
 
         // Create connection parameters.
-        val urlParameters = intent.getStringExtra(EXTRA_URLPARAMETERS)
         roomConnectionParameters =
-            RoomConnectionParameters(roomUri.toString(), roomId, loopback, urlParameters)
+            RoomConnectionParameters(roomUri.toString(), roomId, loopback, "")
 
         // Create CPU monitor
         if (CpuMonitor.isSupported()) {
@@ -239,8 +233,10 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         }
 
         // Send intent arguments to fragments.
-        callFragment!!.arguments = intent.extras
-        hudFragment!!.arguments = intent.extras
+        val callArgs = Bundle()
+        callArgs.putString(CallActivity.EXTRA_ROOMID, roomId)
+        callFragment!!.arguments = callArgs
+
         // Activate call and HUD fragments and start the call.
         val ft = fragmentManager.beginTransaction()
         ft.add(R.id.call_fragment_container, callFragment)
@@ -266,6 +262,114 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         } else {
 //            startCall()
         }
+    }
+    private fun sharedPrefGetBoolean(attributeId: Int, defaultId: Int): Boolean {
+        val defaultValue = java.lang.Boolean.parseBoolean(getString(defaultId))
+        val attributeName = getString(attributeId)
+        return sharedPref.getBoolean(attributeName, defaultValue)
+    }
+
+    private fun sharedPrefGetInteger(attributeId: Int, defaultId: Int): Int {
+        val defaultString = getString(defaultId)
+        val defaultValue = defaultString.toInt()
+        val attributeName = getString(attributeId)
+        val value = sharedPref.getString(attributeName, defaultString)
+        return try {
+            value!!.toInt()
+        } catch (e: NumberFormatException) {
+            Log.e(TAG, "Wrong setting for: $attributeName:$value")
+            defaultValue
+        }
+    }
+
+    private fun getVideoResolutionFromSettings(useValuesFromIntent: Boolean = false) : Pair<Int, Int> {
+        // Get video resolution from settings.
+        var videoWidth = 0
+        var videoHeight = 0
+        if (useValuesFromIntent) {
+            videoWidth = intent.getIntExtra(CallActivity.EXTRA_VIDEO_WIDTH, 0)
+            videoHeight = intent.getIntExtra(CallActivity.EXTRA_VIDEO_HEIGHT, 0)
+        }
+        if (videoWidth == 0 && videoHeight == 0) {
+            val keyprefResolution = getString(R.string.pref_resolution_key)
+            val resolution = sharedPref.getString(
+                keyprefResolution,
+                getString(R.string.pref_resolution_default)
+            )
+            val dimensions = resolution!!.split("[ x]+").toTypedArray()
+            if (dimensions.size == 2) {
+                try {
+                    videoWidth = dimensions[0].toInt()
+                    videoHeight = dimensions[1].toInt()
+                } catch (e: NumberFormatException) {
+                    videoWidth = 0
+                    videoHeight = 0
+                    Log.e(TAG, "Wrong video resolution setting: $resolution")
+                }
+            }
+        }
+        if (screencaptureEnabled && videoWidth == 0 && videoHeight == 0) {
+            videoWidth = displayMetrics.widthPixels
+            videoHeight = displayMetrics.heightPixels
+        }
+        return Pair(videoWidth, videoHeight)
+    }
+
+    private fun getCameraFpsFromSettings(useValuesFromIntent: Boolean = false): Int {
+        var cameraFps = 0
+        if (useValuesFromIntent) {
+            cameraFps = intent.getIntExtra(CallActivity.EXTRA_VIDEO_FPS, 0)
+        }
+        if (cameraFps == 0) {
+            val fps = sharedPref.getString(getString(R.string.pref_fps_key), getString(R.string.pref_fps_default))
+            val fpsValues = fps!!.split("[ x]+").toTypedArray()
+            if (fpsValues.size == 2) {
+                try {
+                    cameraFps = fpsValues[0].toInt()
+                } catch (e: NumberFormatException) {
+                    cameraFps = 0
+                    Log.e(TAG, "Wrong camera fps setting: $fps")
+                }
+            }
+        }
+        return cameraFps
+    }
+
+    private fun getVideoBitrateFromSettings(useValuesFromIntent: Boolean = false): Int {
+        var videoStartBitrate = 0
+        if (useValuesFromIntent) {
+            videoStartBitrate = intent.getIntExtra(CallActivity.EXTRA_VIDEO_BITRATE, 0)
+        }
+        if (videoStartBitrate == 0) {
+            val bitrateTypeDefault = getString(R.string.pref_maxvideobitrate_default)
+            val bitrateType = sharedPref.getString(getString(R.string.pref_maxvideobitrate_key), bitrateTypeDefault)
+            if (bitrateType != bitrateTypeDefault) {
+                val bitrateValue = sharedPref.getString(
+                    getString(R.string.pref_maxvideobitratevalue_key), getString(R.string.pref_maxvideobitratevalue_default)
+                )
+                videoStartBitrate = bitrateValue!!.toInt()
+            }
+        }
+        return videoStartBitrate
+    }
+
+    private fun getAudioBitrateFromSettings(useValuesFromIntent: Boolean = false): Int {
+        var audioStartBitrate = 0
+        if (useValuesFromIntent) {
+            audioStartBitrate = intent.getIntExtra(CallActivity.EXTRA_AUDIO_BITRATE, 0)
+        }
+        if (audioStartBitrate == 0) {
+            val bitrateTypeDefault = getString(R.string.pref_startaudiobitrate_default)
+            val bitrateType = sharedPref.getString(getString(R.string.pref_startaudiobitrate_key), bitrateTypeDefault)
+            if (bitrateType != bitrateTypeDefault) {
+                val bitrateValue = sharedPref.getString(
+                    getString(R.string.pref_startaudiobitratevalue_key),
+                    getString(R.string.pref_startaudiobitratevalue_default)
+                )
+                audioStartBitrate = bitrateValue!!.toInt()
+            }
+        }
+        return audioStartBitrate
     }
 
     @get:TargetApi(17)
@@ -295,11 +399,11 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     }
 
     private fun useCamera2(): Boolean {
-        return Camera2Enumerator.isSupported(this) && intent.getBooleanExtra(EXTRA_CAMERA2, true)
+        return Camera2Enumerator.isSupported(this) && sharedPrefGetBoolean(R.string.pref_camera2_key, R.string.pref_camera2_default)
     }
 
     private fun captureToTexture(): Boolean {
-        return intent.getBooleanExtra(EXTRA_CAPTURETOTEXTURE_ENABLED, false)
+        return sharedPrefGetBoolean(R.string.pref_capturetotexture_key, R.string.pref_capturetotexture_default)
     }
 
     private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? {
@@ -916,35 +1020,12 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
     companion object {
         private const val TAG = "CallRTCClient"
         const val EXTRA_ROOMID = "org.appspot.apprtc.ROOMID"
-        const val EXTRA_URLPARAMETERS = "org.appspot.apprtc.URLPARAMETERS"
         const val EXTRA_LOOPBACK = "org.appspot.apprtc.LOOPBACK"
-        const val EXTRA_VIDEO_CALL = "org.appspot.apprtc.VIDEO_CALL"
-        const val EXTRA_SCREENCAPTURE = "org.appspot.apprtc.SCREENCAPTURE"
-        const val EXTRA_CAMERA2 = "org.appspot.apprtc.CAMERA2"
         const val EXTRA_VIDEO_WIDTH = "org.appspot.apprtc.VIDEO_WIDTH"
         const val EXTRA_VIDEO_HEIGHT = "org.appspot.apprtc.VIDEO_HEIGHT"
         const val EXTRA_VIDEO_FPS = "org.appspot.apprtc.VIDEO_FPS"
-        const val EXTRA_VIDEO_CAPTUREQUALITYSLIDER_ENABLED =
-            "org.appsopt.apprtc.VIDEO_CAPTUREQUALITYSLIDER"
         const val EXTRA_VIDEO_BITRATE = "org.appspot.apprtc.VIDEO_BITRATE"
-        const val EXTRA_VIDEOCODEC = "org.appspot.apprtc.VIDEOCODEC"
-        const val EXTRA_HWCODEC_ENABLED = "org.appspot.apprtc.HWCODEC"
-        const val EXTRA_CAPTURETOTEXTURE_ENABLED = "org.appspot.apprtc.CAPTURETOTEXTURE"
-        const val EXTRA_FLEXFEC_ENABLED = "org.appspot.apprtc.FLEXFEC"
         const val EXTRA_AUDIO_BITRATE = "org.appspot.apprtc.AUDIO_BITRATE"
-        const val EXTRA_AUDIOCODEC = "org.appspot.apprtc.AUDIOCODEC"
-        const val EXTRA_NOAUDIOPROCESSING_ENABLED = "org.appspot.apprtc.NOAUDIOPROCESSING"
-        const val EXTRA_AECDUMP_ENABLED = "org.appspot.apprtc.AECDUMP"
-        const val EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED =
-            "org.appspot.apprtc.SAVE_INPUT_AUDIO_TO_FILE"
-        const val EXTRA_OPENSLES_ENABLED = "org.appspot.apprtc.OPENSLES"
-        const val EXTRA_DISABLE_BUILT_IN_AEC = "org.appspot.apprtc.DISABLE_BUILT_IN_AEC"
-        const val EXTRA_DISABLE_BUILT_IN_AGC = "org.appspot.apprtc.DISABLE_BUILT_IN_AGC"
-        const val EXTRA_DISABLE_BUILT_IN_NS = "org.appspot.apprtc.DISABLE_BUILT_IN_NS"
-        const val EXTRA_DISABLE_WEBRTC_AGC_AND_HPF =
-            "org.appspot.apprtc.DISABLE_WEBRTC_GAIN_CONTROL"
-        const val EXTRA_DISPLAY_HUD = "org.appspot.apprtc.DISPLAY_HUD"
-        const val EXTRA_TRACING = "org.appspot.apprtc.TRACING"
         const val EXTRA_CMDLINE = "org.appspot.apprtc.CMDLINE"
         const val EXTRA_RUNTIME = "org.appspot.apprtc.RUNTIME"
         const val EXTRA_VIDEO_FILE_AS_CAMERA = "org.appspot.apprtc.VIDEO_FILE_AS_CAMERA"
@@ -954,14 +1035,6 @@ class CallActivity : Activity(), SignalingEvents, PeerConnectionEvents, OnCallEv
         const val EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT =
             "org.appspot.apprtc.SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT"
         const val EXTRA_USE_VALUES_FROM_INTENT = "org.appspot.apprtc.USE_VALUES_FROM_INTENT"
-        const val EXTRA_DATA_CHANNEL_ENABLED = "org.appspot.apprtc.DATA_CHANNEL_ENABLED"
-        const val EXTRA_ORDERED = "org.appspot.apprtc.ORDERED"
-        const val EXTRA_MAX_RETRANSMITS_MS = "org.appspot.apprtc.MAX_RETRANSMITS_MS"
-        const val EXTRA_MAX_RETRANSMITS = "org.appspot.apprtc.MAX_RETRANSMITS"
-        const val EXTRA_PROTOCOL = "org.appspot.apprtc.PROTOCOL"
-        const val EXTRA_NEGOTIATED = "org.appspot.apprtc.NEGOTIATED"
-        const val EXTRA_ID = "org.appspot.apprtc.ID"
-        const val EXTRA_ENABLE_RTCEVENTLOG = "org.appspot.apprtc.ENABLE_RTCEVENTLOG"
         private const val CAPTURE_PERMISSION_REQUEST_CODE = 1
 
         // List of mandatory application permissions.

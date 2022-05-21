@@ -12,7 +12,9 @@ package org.appspot.addrtc;
 
 import android.app.Activity;
 import android.app.Fragment;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -106,15 +108,15 @@ public class CallFragment extends Fragment {
   public void onStart() {
     super.onStart();
 
-    boolean captureSliderEnabled = false;
     Bundle args = getArguments();
     if (args != null) {
       String contactName = args.getString(CallActivity.EXTRA_ROOMID);
       contactView.setText(contactName);
-      videoCallEnabled = args.getBoolean(CallActivity.EXTRA_VIDEO_CALL, true);
-      captureSliderEnabled = videoCallEnabled
-          && args.getBoolean(CallActivity.EXTRA_VIDEO_CAPTUREQUALITYSLIDER_ENABLED, false);
     }
+    SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this.getActivity());
+    videoCallEnabled = sharedPref.getBoolean(getString(R.string.pref_videocall_key), true);
+    boolean captureSliderEnabled = videoCallEnabled
+            && sharedPref.getBoolean(getString(R.string.pref_screencapture_key), false);
     if (!videoCallEnabled) {
       cameraSwitchButton.setVisibility(View.INVISIBLE);
     }

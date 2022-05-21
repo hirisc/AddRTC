@@ -11,7 +11,9 @@
 package org.appspot.addrtc;
 
 import android.app.Fragment;
+import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -70,11 +72,9 @@ public class HudFragment extends Fragment {
   public void onStart() {
     super.onStart();
 
-    Bundle args = getArguments();
-    if (args != null) {
-      videoCallEnabled = args.getBoolean(CallActivity.EXTRA_VIDEO_CALL, true);
-      displayHud = args.getBoolean(CallActivity.EXTRA_DISPLAY_HUD, false);
-    }
+    SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this.getActivity());
+    videoCallEnabled = sharedPref.getBoolean(getString(R.string.pref_videocall_key), true);
+    displayHud = sharedPref.getBoolean(getString(R.string.pref_displayhud_key), false);
     int visibility = displayHud ? View.VISIBLE : View.INVISIBLE;
     encoderStatView.setVisibility(visibility);
     toggleDebugButton.setVisibility(visibility);

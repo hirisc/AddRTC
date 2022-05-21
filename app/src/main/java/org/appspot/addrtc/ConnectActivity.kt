@@ -9,28 +9,28 @@
  */
 package org.appspot.addrtc
 
-import android.app.Activity
-import android.os.Bundle
-import android.preference.PreferenceManager
-import org.json.JSONException
-import android.app.AlertDialog
 import android.annotation.TargetApi
+import android.app.Activity
+import android.app.AlertDialog
 import android.content.*
-import android.os.Build
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
+import android.preference.PreferenceManager
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.*
 import android.widget.AdapterView.OnItemClickListener
+import android.widget.ArrayAdapter
+import android.widget.ListView
+import android.widget.TextView
+import org.json.JSONException
 import org.json.JSONObject
-import java.lang.NumberFormatException
 import java.net.URISyntaxException
-import java.util.*
 
 /**
  * Handles the initial setup where the user selects which room to join.
@@ -39,13 +39,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
     private var webSocketService: WebSocketService.WebSocketBinder? = null
     private var roomListView: ListView? = null
     private var sharedPref: SharedPreferences? = null
-    private var keyprefResolution: String? = null
-    private var keyprefFps: String? = null
-    private var keyprefVideoBitrateType: String? = null
-    private var keyprefVideoBitrateValue: String? = null
-    private var keyprefAudioBitrateType: String? = null
-    private var keyprefAudioBitrateValue: String? = null
-    private var keyprefRoomList: String? = null
     private var devicesList = mutableMapOf<String, String>()
     private var roomList: ArrayList<String?>? = null
     private var adapter: ArrayAdapter<String?>? = null
@@ -58,13 +51,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
         // Get setting keys.
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false)
         sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
-        keyprefResolution = getString(R.string.pref_resolution_key)
-        keyprefFps = getString(R.string.pref_fps_key)
-        keyprefVideoBitrateType = getString(R.string.pref_maxvideobitrate_key)
-        keyprefVideoBitrateValue = getString(R.string.pref_maxvideobitratevalue_key)
-        keyprefAudioBitrateType = getString(R.string.pref_startaudiobitrate_key)
-        keyprefAudioBitrateValue = getString(R.string.pref_startaudiobitratevalue_key)
-        keyprefRoomList = getString(R.string.pref_room_list_key)
         setContentView(R.layout.activity_connect)
         roomListView = findViewById(R.id.room_listview)
         roomListView?.emptyView = findViewById(android.R.id.empty)
@@ -213,62 +199,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
             return missingPermissions.toTypedArray()
         }
 
-    /**
-     * Get a value from the shared preference or from the intent, if it does not
-     * exist the default is used.
-     */
-    private fun sharedPrefGetString(
-        attributeId: Int, intentName: String, defaultId: Int, useFromIntent: Boolean
-    ): String? {
-        val defaultValue = getString(defaultId)
-        return if (useFromIntent) {
-            val value = intent.getStringExtra(intentName)
-            value ?: defaultValue
-        } else {
-            val attributeName = getString(attributeId)
-            sharedPref!!.getString(attributeName, defaultValue)
-        }
-    }
-
-    /**
-     * Get a value from the shared preference or from the intent, if it does not
-     * exist the default is used.
-     */
-    private fun sharedPrefGetBoolean(
-        attributeId: Int, intentName: String, defaultId: Int, useFromIntent: Boolean
-    ): Boolean {
-        val defaultValue = java.lang.Boolean.parseBoolean(getString(defaultId))
-        return if (useFromIntent) {
-            intent.getBooleanExtra(intentName, defaultValue)
-        } else {
-            val attributeName = getString(attributeId)
-            sharedPref!!.getBoolean(attributeName, defaultValue)
-        }
-    }
-
-    /**
-     * Get a value from the shared preference or from the intent, if it does not
-     * exist the default is used.
-     */
-    private fun sharedPrefGetInteger(
-        attributeId: Int, intentName: String, defaultId: Int, useFromIntent: Boolean
-    ): Int {
-        val defaultString = getString(defaultId)
-        val defaultValue = defaultString.toInt()
-        return if (useFromIntent) {
-            intent.getIntExtra(intentName, defaultValue)
-        } else {
-            val attributeName = getString(attributeId)
-            val value = sharedPref!!.getString(attributeName, defaultString)
-            try {
-                value!!.toInt()
-            } catch (e: NumberFormatException) {
-                Log.e(TAG, "Wrong setting for: $attributeName:$value")
-                defaultValue
-            }
-        }
-    }
-
     private fun connectToRoom(
         offer: JSONObject?,
         address: String?,
@@ -276,237 +206,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
         useValuesFromIntent: Boolean, runTimeMs: Int
     ) {
         Companion.commandLineRun = commandLineRun
-
-        // Video call enabled flag.
-        val videoCallEnabled = sharedPrefGetBoolean(
-            R.string.pref_videocall_key,
-            CallActivity.EXTRA_VIDEO_CALL, R.string.pref_videocall_default, useValuesFromIntent
-        )
-
-        // Use screencapture option.
-        val useScreencapture = sharedPrefGetBoolean(
-            R.string.pref_screencapture_key,
-            CallActivity.EXTRA_SCREENCAPTURE,
-            R.string.pref_screencapture_default,
-            useValuesFromIntent
-        )
-
-        // Use Camera2 option.
-        val useCamera2 = sharedPrefGetBoolean(
-            R.string.pref_camera2_key, CallActivity.EXTRA_CAMERA2,
-            R.string.pref_camera2_default, useValuesFromIntent
-        )
-
-        // Get default codecs.
-        val videoCodec = sharedPrefGetString(
-            R.string.pref_videocodec_key,
-            CallActivity.EXTRA_VIDEOCODEC, R.string.pref_videocodec_default, useValuesFromIntent
-        )
-        val audioCodec = sharedPrefGetString(
-            R.string.pref_audiocodec_key,
-            CallActivity.EXTRA_AUDIOCODEC, R.string.pref_audiocodec_default, useValuesFromIntent
-        )
-
-        // Check HW codec flag.
-        val hwCodec = sharedPrefGetBoolean(
-            R.string.pref_hwcodec_key,
-            CallActivity.EXTRA_HWCODEC_ENABLED, R.string.pref_hwcodec_default, useValuesFromIntent
-        )
-
-        // Check Capture to texture.
-        val captureToTexture = sharedPrefGetBoolean(
-            R.string.pref_capturetotexture_key,
-            CallActivity.EXTRA_CAPTURETOTEXTURE_ENABLED, R.string.pref_capturetotexture_default,
-            useValuesFromIntent
-        )
-
-        // Check FlexFEC.
-        val flexfecEnabled = sharedPrefGetBoolean(
-            R.string.pref_flexfec_key,
-            CallActivity.EXTRA_FLEXFEC_ENABLED, R.string.pref_flexfec_default, useValuesFromIntent
-        )
-
-        // Check Disable Audio Processing flag.
-        val noAudioProcessing = sharedPrefGetBoolean(
-            R.string.pref_noaudioprocessing_key,
-            CallActivity.EXTRA_NOAUDIOPROCESSING_ENABLED, R.string.pref_noaudioprocessing_default,
-            useValuesFromIntent
-        )
-        val aecDump = sharedPrefGetBoolean(
-            R.string.pref_aecdump_key,
-            CallActivity.EXTRA_AECDUMP_ENABLED, R.string.pref_aecdump_default, useValuesFromIntent
-        )
-        val saveInputAudioToFile = sharedPrefGetBoolean(
-            R.string.pref_enable_save_input_audio_to_file_key,
-            CallActivity.EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED,
-            R.string.pref_enable_save_input_audio_to_file_default, useValuesFromIntent
-        )
-
-        // Check OpenSL ES enabled flag.
-        val useOpenSLES = sharedPrefGetBoolean(
-            R.string.pref_opensles_key,
-            CallActivity.EXTRA_OPENSLES_ENABLED, R.string.pref_opensles_default, useValuesFromIntent
-        )
-
-        // Check Disable built-in AEC flag.
-        val disableBuiltInAEC = sharedPrefGetBoolean(
-            R.string.pref_disable_built_in_aec_key,
-            CallActivity.EXTRA_DISABLE_BUILT_IN_AEC, R.string.pref_disable_built_in_aec_default,
-            useValuesFromIntent
-        )
-
-        // Check Disable built-in AGC flag.
-        val disableBuiltInAGC = sharedPrefGetBoolean(
-            R.string.pref_disable_built_in_agc_key,
-            CallActivity.EXTRA_DISABLE_BUILT_IN_AGC, R.string.pref_disable_built_in_agc_default,
-            useValuesFromIntent
-        )
-
-        // Check Disable built-in NS flag.
-        val disableBuiltInNS = sharedPrefGetBoolean(
-            R.string.pref_disable_built_in_ns_key,
-            CallActivity.EXTRA_DISABLE_BUILT_IN_NS, R.string.pref_disable_built_in_ns_default,
-            useValuesFromIntent
-        )
-
-        // Check Disable gain control
-        val disableWebRtcAGCAndHPF = sharedPrefGetBoolean(
-            R.string.pref_disable_webrtc_agc_and_hpf_key,
-            CallActivity.EXTRA_DISABLE_WEBRTC_AGC_AND_HPF,
-            R.string.pref_disable_webrtc_agc_and_hpf_key,
-            useValuesFromIntent
-        )
-
-        // Get video resolution from settings.
-        var videoWidth = 0
-        var videoHeight = 0
-        if (useValuesFromIntent) {
-            videoWidth = intent.getIntExtra(CallActivity.EXTRA_VIDEO_WIDTH, 0)
-            videoHeight = intent.getIntExtra(CallActivity.EXTRA_VIDEO_HEIGHT, 0)
-        }
-        if (videoWidth == 0 && videoHeight == 0) {
-            val resolution = sharedPref!!.getString(
-                keyprefResolution,
-                getString(R.string.pref_resolution_default)
-            )
-            val dimensions = resolution!!.split("[ x]+").toTypedArray()
-            if (dimensions.size == 2) {
-                try {
-                    videoWidth = dimensions[0].toInt()
-                    videoHeight = dimensions[1].toInt()
-                } catch (e: NumberFormatException) {
-                    videoWidth = 0
-                    videoHeight = 0
-                    Log.e(TAG, "Wrong video resolution setting: $resolution")
-                }
-            }
-        }
-
-        // Get camera fps from settings.
-        var cameraFps = 0
-        if (useValuesFromIntent) {
-            cameraFps = intent.getIntExtra(CallActivity.EXTRA_VIDEO_FPS, 0)
-        }
-        if (cameraFps == 0) {
-            val fps = sharedPref!!.getString(keyprefFps, getString(R.string.pref_fps_default))
-            val fpsValues = fps!!.split("[ x]+").toTypedArray()
-            if (fpsValues.size == 2) {
-                try {
-                    cameraFps = fpsValues[0].toInt()
-                } catch (e: NumberFormatException) {
-                    cameraFps = 0
-                    Log.e(TAG, "Wrong camera fps setting: $fps")
-                }
-            }
-        }
-
-        // Check capture quality slider flag.
-        val captureQualitySlider = sharedPrefGetBoolean(
-            R.string.pref_capturequalityslider_key,
-            CallActivity.EXTRA_VIDEO_CAPTUREQUALITYSLIDER_ENABLED,
-            R.string.pref_capturequalityslider_default, useValuesFromIntent
-        )
-
-        // Get video and audio start bitrate.
-        var videoStartBitrate = 0
-        if (useValuesFromIntent) {
-            videoStartBitrate = intent.getIntExtra(CallActivity.EXTRA_VIDEO_BITRATE, 0)
-        }
-        if (videoStartBitrate == 0) {
-            val bitrateTypeDefault = getString(R.string.pref_maxvideobitrate_default)
-            val bitrateType = sharedPref!!.getString(keyprefVideoBitrateType, bitrateTypeDefault)
-            if (bitrateType != bitrateTypeDefault) {
-                val bitrateValue = sharedPref!!.getString(
-                    keyprefVideoBitrateValue, getString(R.string.pref_maxvideobitratevalue_default)
-                )
-                videoStartBitrate = bitrateValue!!.toInt()
-            }
-        }
-        var audioStartBitrate = 0
-        if (useValuesFromIntent) {
-            audioStartBitrate = intent.getIntExtra(CallActivity.EXTRA_AUDIO_BITRATE, 0)
-        }
-        if (audioStartBitrate == 0) {
-            val bitrateTypeDefault = getString(R.string.pref_startaudiobitrate_default)
-            val bitrateType = sharedPref!!.getString(keyprefAudioBitrateType, bitrateTypeDefault)
-            if (bitrateType != bitrateTypeDefault) {
-                val bitrateValue = sharedPref!!.getString(
-                    keyprefAudioBitrateValue,
-                    getString(R.string.pref_startaudiobitratevalue_default)
-                )
-                audioStartBitrate = bitrateValue!!.toInt()
-            }
-        }
-
-        // Check statistics display option.
-        val displayHud = sharedPrefGetBoolean(
-            R.string.pref_displayhud_key,
-            CallActivity.EXTRA_DISPLAY_HUD, R.string.pref_displayhud_default, useValuesFromIntent
-        )
-        val tracing = sharedPrefGetBoolean(
-            R.string.pref_tracing_key, CallActivity.EXTRA_TRACING,
-            R.string.pref_tracing_default, useValuesFromIntent
-        )
-
-        // Check Enable RtcEventLog.
-        val rtcEventLogEnabled = sharedPrefGetBoolean(
-            R.string.pref_enable_rtceventlog_key,
-            CallActivity.EXTRA_ENABLE_RTCEVENTLOG, R.string.pref_enable_rtceventlog_default,
-            useValuesFromIntent
-        )
-
-        // Get datachannel options
-        val dataChannelEnabled = sharedPrefGetBoolean(
-            R.string.pref_enable_datachannel_key,
-            CallActivity.EXTRA_DATA_CHANNEL_ENABLED, R.string.pref_enable_datachannel_default,
-            useValuesFromIntent
-        )
-        val ordered = sharedPrefGetBoolean(
-            R.string.pref_ordered_key, CallActivity.EXTRA_ORDERED,
-            R.string.pref_ordered_default, useValuesFromIntent
-        )
-        val negotiated = sharedPrefGetBoolean(
-            R.string.pref_negotiated_key,
-            CallActivity.EXTRA_NEGOTIATED, R.string.pref_negotiated_default, useValuesFromIntent
-        )
-        val maxRetrMs = sharedPrefGetInteger(
-            R.string.pref_max_retransmit_time_ms_key,
-            CallActivity.EXTRA_MAX_RETRANSMITS_MS, R.string.pref_max_retransmit_time_ms_default,
-            useValuesFromIntent
-        )
-        val maxRetr = sharedPrefGetInteger(
-            R.string.pref_max_retransmits_key, CallActivity.EXTRA_MAX_RETRANSMITS,
-            R.string.pref_max_retransmits_default, useValuesFromIntent
-        )
-        val id = sharedPrefGetInteger(
-            R.string.pref_data_id_key, CallActivity.EXTRA_ID,
-            R.string.pref_data_id_default, useValuesFromIntent
-        )
-        val protocol = sharedPrefGetString(
-            R.string.pref_data_protocol_key,
-            CallActivity.EXTRA_PROTOCOL, R.string.pref_data_protocol_default, useValuesFromIntent
-        )
-
         // Start AppRTCMobile activity.
         try {
             val uri = address?.let {
@@ -520,83 +219,23 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
             }
             intent.putExtra(CallActivity.EXTRA_ROOMID, roomId)
             intent.putExtra(CallActivity.EXTRA_LOOPBACK, loopback)
-            intent.putExtra(CallActivity.EXTRA_VIDEO_CALL, videoCallEnabled)
-            intent.putExtra(CallActivity.EXTRA_SCREENCAPTURE, useScreencapture)
-            intent.putExtra(CallActivity.EXTRA_CAMERA2, useCamera2)
-            intent.putExtra(CallActivity.EXTRA_VIDEO_WIDTH, videoWidth)
-            intent.putExtra(CallActivity.EXTRA_VIDEO_HEIGHT, videoHeight)
-            intent.putExtra(CallActivity.EXTRA_VIDEO_FPS, cameraFps)
-            intent.putExtra(
-                CallActivity.EXTRA_VIDEO_CAPTUREQUALITYSLIDER_ENABLED,
-                captureQualitySlider
-            )
-            intent.putExtra(CallActivity.EXTRA_VIDEO_BITRATE, videoStartBitrate)
-            intent.putExtra(CallActivity.EXTRA_VIDEOCODEC, videoCodec)
-            intent.putExtra(CallActivity.EXTRA_HWCODEC_ENABLED, hwCodec)
-            intent.putExtra(CallActivity.EXTRA_CAPTURETOTEXTURE_ENABLED, captureToTexture)
-            intent.putExtra(CallActivity.EXTRA_FLEXFEC_ENABLED, flexfecEnabled)
-            intent.putExtra(CallActivity.EXTRA_NOAUDIOPROCESSING_ENABLED, noAudioProcessing)
-            intent.putExtra(CallActivity.EXTRA_AECDUMP_ENABLED, aecDump)
-            intent.putExtra(
-                CallActivity.EXTRA_SAVE_INPUT_AUDIO_TO_FILE_ENABLED,
-                saveInputAudioToFile
-            )
-            intent.putExtra(CallActivity.EXTRA_OPENSLES_ENABLED, useOpenSLES)
-            intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_AEC, disableBuiltInAEC)
-            intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_AGC, disableBuiltInAGC)
-            intent.putExtra(CallActivity.EXTRA_DISABLE_BUILT_IN_NS, disableBuiltInNS)
-            intent.putExtra(CallActivity.EXTRA_DISABLE_WEBRTC_AGC_AND_HPF, disableWebRtcAGCAndHPF)
-            intent.putExtra(CallActivity.EXTRA_AUDIO_BITRATE, audioStartBitrate)
-            intent.putExtra(CallActivity.EXTRA_AUDIOCODEC, audioCodec)
-            intent.putExtra(CallActivity.EXTRA_DISPLAY_HUD, displayHud)
-            intent.putExtra(CallActivity.EXTRA_TRACING, tracing)
-            intent.putExtra(CallActivity.EXTRA_ENABLE_RTCEVENTLOG, rtcEventLogEnabled)
             intent.putExtra(CallActivity.EXTRA_CMDLINE, commandLineRun)
             intent.putExtra(CallActivity.EXTRA_RUNTIME, runTimeMs)
-            intent.putExtra(CallActivity.EXTRA_DATA_CHANNEL_ENABLED, dataChannelEnabled)
-            if (dataChannelEnabled) {
-                intent.putExtra(CallActivity.EXTRA_ORDERED, ordered)
-                intent.putExtra(CallActivity.EXTRA_MAX_RETRANSMITS_MS, maxRetrMs)
-                intent.putExtra(CallActivity.EXTRA_MAX_RETRANSMITS, maxRetr)
-                intent.putExtra(CallActivity.EXTRA_PROTOCOL, protocol)
-                intent.putExtra(CallActivity.EXTRA_NEGOTIATED, negotiated)
-                intent.putExtra(CallActivity.EXTRA_ID, id)
-            }
-            if (useValuesFromIntent) {
-                if (getIntent().hasExtra(CallActivity.EXTRA_VIDEO_FILE_AS_CAMERA)) {
-                    val videoFileAsCamera =
-                        getIntent().getStringExtra(CallActivity.EXTRA_VIDEO_FILE_AS_CAMERA)
-                    intent.putExtra(CallActivity.EXTRA_VIDEO_FILE_AS_CAMERA, videoFileAsCamera)
-                }
-                if (getIntent().hasExtra(CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE)) {
-                    val saveRemoteVideoToFile =
-                        getIntent().getStringExtra(CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE)
-                    intent.putExtra(
-                        CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE,
-                        saveRemoteVideoToFile
-                    )
-                }
-                if (getIntent().hasExtra(CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_WIDTH)) {
-                    val videoOutWidth = getIntent().getIntExtra(
-                        CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_WIDTH,
-                        0
-                    )
-                    intent.putExtra(
-                        CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_WIDTH,
-                        videoOutWidth
-                    )
-                }
-                if (getIntent().hasExtra(CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT)) {
-                    val videoOutHeight = getIntent().getIntExtra(
-                        CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT,
-                        0
-                    )
-                    intent.putExtra(
-                        CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT,
-                        videoOutHeight
-                    )
-                }
-            }
+/*
+            intent.putExtra(CallActivity.EXTRA_VIDEO_FILE_AS_CAMERA, videoFileAsCamera)
+            intent.putExtra(
+                CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE,
+                saveRemoteVideoToFile
+            )
+            intent.putExtra(
+                CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_WIDTH,
+                videoOutWidth
+            )
+            intent.putExtra(
+                CallActivity.EXTRA_SAVE_REMOTE_VIDEO_TO_FILE_HEIGHT,
+                videoOutHeight
+            )
+*/
             startActivityForResult(intent, CONNECTION_REQUEST)
         } catch (e: URISyntaxException) {
             Log.d(TAG, "URI syntax error")
@@ -686,7 +325,6 @@ class ConnectActivity : Activity(), ServiceConnection, SignalingServer.Events, W
         private const val TAG = "ConnectActivity"
         private const val CONNECTION_REQUEST = 1
         private const val PERMISSION_REQUEST = 2
-        private const val REMOVE_FAVORITE_INDEX = 0
         private var commandLineRun = false
     }
 }
